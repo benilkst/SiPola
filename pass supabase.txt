@@ -1,0 +1,7 @@
+00grTTx6dSsp7FZ6
+
+url
+https://lxuoqdxckjodskoaepbk.supabase.co
+
+anon key
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4dW9xZHhja2pvZHNrb2FlcGJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2MTU1MjMsImV4cCI6MjA4NjE5MTUyM30.mwCow0tf0zeSduNoP_kL_n0ySy2ErbS8JCxcLNSG6fE

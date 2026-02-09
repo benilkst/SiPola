@@ -1,0 +1,857 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  User, ChevronRight, ChevronLeft, QrCode, Users, 
+  ShieldCheck, Building2, CheckCircle, Clock, History, AlertTriangle, 
+  Save, PlusCircle, Printer, X, Edit, Eye, 
+  LogOut, Camera, ClipboardList, MapPin, RefreshCcw, Lock, 
+  Trash2, Sun, Moon, Sunrise, CalendarDays, Monitor
+} from 'lucide-react';
+
+// --- DATA & CONFIG ---
+const ACCOUNTS = [
+  { username: 'Administrator', password: '123456', role: 'Super Admin', name: 'Administrator' },
+  { username: 'Rupam I', password: '123456', role: 'Regu Pengamanan I', name: 'Ka. Rupam I' },
+  { username: 'Rupam II', password: '123456', role: 'Regu Pengamanan II', name: 'Ka. Rupam II' },
+  { username: 'Rupam III', password: '123456', role: 'Regu Pengamanan III', name: 'Ka. Rupam III' },
+  { username: 'Rupam IV', password: '123456', role: 'Regu Pengamanan IV', name: 'Ka. Rupam IV' },
+];
+
+const INITIAL_QR_DATA = [
+  { id: 'QR_001', location: 'Pos Utama Menara' },
+  { id: 'QR_002', location: 'Blok Anggrek - Pintu Utama' },
+  { id: 'QR_003', location: 'Blok Cempaka - Titik Rawan' },
+  { id: 'QR_004', location: 'Area Dapur' },
+  { id: 'QR_005', location: 'Area Bengkel Kerja' },
+];
+
+const BLOCK_CONFIG = {
+  Anggrek: { floors: 2 },
+  Bougenville: { floors: 2 },
+  Cempaka: { floors: 2 },
+  Dahlia: { floors: 2 },
+  Edelweise: { floors: 2 },
+  Dapur: { floors: 1 }
+};
+
+// --- DUMMY DATA GENERATOR ---
+const generateDummyData = () => {
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const twoDaysAgo = new Date(today); twoDaysAgo.setDate(today.getDate() - 2);
+
+  const formatDate = (date) => date.toISOString().split('T')[0];
+
+  const apelData = [
+    { id: 101, pic: 'Ka. Rupam I', shift: 'Pagi', total: 452, time: '07:30', dateISO: formatDate(today) },
+    { id: 102, pic: 'Ka. Rupam II', shift: 'Siang', total: 452, time: '13:30', dateISO: formatDate(today) },
+    { id: 103, pic: 'Ka. Rupam III', shift: 'Malam', total: 452, time: '19:30', dateISO: formatDate(today) },
+    { id: 201, pic: 'Ka. Rupam IV', shift: 'Pagi', total: 450, time: '07:30', dateISO: formatDate(yesterday) },
+  ];
+
+  const activities = [];
+  const activityTypes = ['Kontrol keliling area blok', 'Serah terima pos', 'Penerimaan bahan makanan', 'Pengawalan WBP ke klinik', 'Pemeriksaan instalasi'];
+  
+  [today, yesterday].forEach((date, dayIdx) => {
+    for (let i = 0; i < 15; i++) {
+      const hour = 8 + i; 
+      const timeStr = `${hour < 10 ? '0'+hour : hour}:15`;
+      activities.push({
+        id: `act_${dayIdx}_${i}`,
+        time: timeStr,
+        name: `Petugas ${String.fromCharCode(65 + (i % 5))}`, 
+        desc: `${activityTypes[i % activityTypes.length]} - Situasi aman.`,
+        user: `Rupam ${['I', 'II', 'III', 'IV'][i % 4]}`,
+        dateISO: formatDate(date),
+        images: []
+      });
+    }
+  });
+
+  const scans = [];
+  [today, yesterday].forEach((date, dayIdx) => {
+    for (let i = 0; i < 15; i++) {
+      const hour = 9 + Math.floor(i/2);
+      const min = (i % 2) * 30;
+      const timeStr = `${hour < 10 ? '0'+hour : hour}:${min < 10 ? '0'+min : min}`;
+      scans.push({
+        id: `scan_${dayIdx}_${i}`,
+        loc: INITIAL_QR_DATA[i % 5].location,
+        time: timeStr,
+        status: i % 10 === 0 ? 'Waspada' : 'Aman',
+        desc: i % 10 === 0 ? 'Perlu pengecekan ulang' : 'Aman terkendali',
+        dateISO: formatDate(date)
+      });
+    }
+  });
+
+  return { apelData, activities, scans };
+};
+
+const DUMMY_DATA = generateDummyData();
+
+// --- PRINT HELPERS ---
+const handlePrintSingle = (qrData) => {
+  const w = window.open('', '_blank', 'width=500,height=600');
+  if (!w) return alert("Izinkan pop-up!");
+  w.document.write(`<html><body onload="window.print()" style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;"><div style="text-align:center;border:3px solid #000;padding:40px;border-radius:20px;"><h2>${qrData.location}</h2><img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${qrData.id}"/><br/><br/><code>${qrData.id}</code></div></body></html>`);
+  w.document.close();
+};
+
+const handlePrintAll = (data) => {
+  const w = window.open('', '_blank', 'width=900,height=1000');
+  if (!w) return alert("Izinkan pop-up!");
+  const cards = data.map(i => `
+    <div style="border:3px solid #000; padding:20px; text-align:center; border-radius:15px; break-inside:avoid; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+        <h2 style="margin:0 0 15px 0; font-size:22px; line-height:1.2; text-transform:uppercase;">${i.location}</h2>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${i.id}" style="width:200px; height:200px;"/>
+        <p style="margin:15px 0 0 0; font-family:monospace; font-size:16px; font-weight:bold; color:#333;">${i.id}</p>
+    </div>
+  `).join('');
+
+  w.document.write(`<html><head><style>@page{size:A4;margin:10mm;}body{font-family:'Arial',sans-serif;padding:20px;margin:0;}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;}</style></head><body onload="window.print()"><div class="grid">${cards}</div></body></html>`);
+  w.document.close();
+};
+
+// --- UI COMPONENTS ---
+const GlassCard = ({ children, className = "" }) => (
+  <div className={`bg-white border border-slate-200 rounded-3xl ${className}`}>
+    {children}
+  </div>
+);
+
+const Header = ({ title, subtitle, onBack }) => (
+  <div className="flex items-center justify-between mb-8 pt-4 px-1">
+    <div className="flex items-center">
+      {onBack && (
+        <button onClick={onBack} className="mr-4 w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-all active:scale-90 border border-slate-200">
+          <ChevronLeft size={22} />
+        </button>
+      )}
+      <div>
+        <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{title}</h1>
+        {subtitle && <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">{subtitle}</p>}
+      </div>
+    </div>
+    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center text-white transform rotate-3 shadow-lg shadow-blue-200">
+      <ShieldCheck size={24} />
+    </div>
+  </div>
+);
+
+const MenuCard = ({ icon: Icon, title, desc, color, onClick, variant = "row" }) => {
+  if (variant === "col") {
+    return (
+      <button 
+        onClick={onClick} 
+        className="w-full relative group bg-white border border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 transform active:scale-[0.98] hover:bg-slate-50 hover:shadow-lg h-full"
+      >
+        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 transition-all duration-300 group-hover:scale-110 ${color} bg-slate-100`}>
+          <Icon size={28} strokeWidth={2} />
+        </div>
+        <h3 className="font-bold text-slate-800 text-sm tracking-tight leading-tight group-hover:text-blue-600 transition-colors">{title}</h3>
+        <p className="text-[10px] text-slate-400 font-medium mt-1 line-clamp-2">{desc}</p>
+      </button>
+    );
+  }
+  return (
+    <button 
+      onClick={onClick} 
+      className="w-full relative group bg-white border border-slate-200 rounded-3xl p-5 flex items-center transition-all duration-300 transform active:scale-[0.98] hover:bg-slate-50 hover:shadow-md"
+    >
+      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mr-5 transition-all duration-300 group-hover:scale-110 ${color} bg-slate-100`}>
+        <Icon size={28} strokeWidth={2} />
+      </div>
+      <div className="text-left flex-1">
+        <h3 className="font-bold text-slate-800 text-lg tracking-tight group-hover:text-blue-600 transition-colors">{title}</h3>
+        <p className="text-xs text-slate-500 font-medium mt-1">{desc}</p>
+      </div>
+      <div className="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 group-hover:text-blue-500 transition-all bg-slate-100">
+        <ChevronRight size={18} />
+      </div>
+    </button>
+  );
+};
+
+// --- SCREEN COMPONENTS ---
+
+const LoginScreen = ({ setUser, setCurrentScreen }) => {
+  const [u, setU] = useState('');
+  const [p, setP] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const doLogin = (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setTimeout(() => {
+      const acc = ACCOUNTS.find(a => a.username.toLowerCase() === u.toLowerCase() && a.password === p);
+      if (acc) {
+        setUser({ name: acc.name, role: acc.role });
+        setCurrentScreen('home');
+      } else {
+        alert("Login Gagal!");
+        setLoading(false);
+      }
+    }, 800);
+  };
+
+  const doViewerLogin = () => {
+    setLoading(true);
+    setTimeout(() => {
+        setUser({ name: 'Tamu / Viewer', role: 'Viewer' });
+        setCurrentScreen('home');
+    }, 600);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center p-4 font-sans">
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
+          <div className="absolute -top-[10%] -left-[10%] w-[50vh] h-[50vh] bg-blue-600/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob"></div>
+          <div className="absolute top-[20%] -right-[10%] w-[40vh] h-[40vh] bg-cyan-500/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-2000"></div>
+      </div>
+      <div className="w-full max-w-sm z-10 relative flex flex-col justify-center">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/20 mb-5">
+            <Building2 className="text-white w-10 h-10" />
+          </div>
+          <h1 className="text-4xl font-black text-white tracking-tighter mb-1">SiPola</h1>
+          <div className="flex items-center justify-center space-x-2 opacity-80">
+              <div className="h-px w-8 bg-blue-400/50"></div>
+              <p className="text-blue-100 text-[10px] font-bold tracking-[0.25em] uppercase">Sistem Pengamanan</p>
+              <div className="h-px w-8 bg-blue-400/50"></div>
+          </div>
+        </div>
+        <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-6 sm:p-8 rounded-3xl">
+          <form onSubmit={doLogin} className="space-y-5">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-extrabold text-blue-200/80 uppercase tracking-widest ml-1">Identitas Petugas</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <User className="text-white/40 w-5 h-5 group-focus-within:text-blue-400 transition-colors duration-300" />
+                </div>
+                <select 
+                  className="w-full bg-black/20 border border-white/10 rounded-xl py-3.5 pl-12 pr-10 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 focus:bg-black/30 transition-all appearance-none font-medium text-sm"
+                  value={u}
+                  onChange={e => setU(e.target.value)}
+                >
+                  <option value="" className="bg-slate-900 text-slate-400">Pilih Akun...</option>
+                  {ACCOUNTS.map(a => <option key={a.username} value={a.username} className="bg-slate-900 text-white">{a.username}</option>)}
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                  <ChevronRight className="text-white/20 w-4 h-4 rotate-90" />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-extrabold text-blue-200/80 uppercase tracking-widest ml-1">Kode Akses</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Lock className="text-white/40 w-5 h-5 group-focus-within:text-blue-400 transition-colors duration-300" />
+                </div>
+                <input 
+                  type="password" 
+                  className="w-full bg-black/20 border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 focus:bg-black/30 transition-all font-medium tracking-widest text-sm"
+                  placeholder="••••••"
+                  value={p}
+                  onChange={e => setP(e.target.value)}
+                />
+              </div>
+            </div>
+            <button className="w-full mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-xl transition-all transform active:scale-[0.98] flex items-center justify-center ring-1 ring-white/20">
+              {loading ? <RefreshCcw className="animate-spin w-5 h-5 opacity-80" /> : <span className="tracking-wide">MASUK SISTEM</span>}
+            </button>
+            <div className="pt-2 border-t border-white/10">
+                <button type="button" onClick={doViewerLogin} className="w-full bg-transparent border border-white/20 hover:bg-white/5 text-blue-200 font-bold py-3.5 rounded-xl transition-all flex items-center justify-center text-xs tracking-wider">
+                    <Monitor className="w-4 h-4 mr-2 opacity-80" /> MODE MONITORING (VIEWER)
+                </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HomeScreen = ({ user, setCurrentScreen, apelHistory, activityLog }) => {
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const getApelData = (shift) => {
+    const found = apelHistory.find(item => item.dateISO === selectedDate && item.shift === shift);
+    return found ? found.total : '-';
+  };
+
+  const getFilteredActivities = () => {
+    return activityLog.filter(item => item.dateISO === selectedDate).sort((a, b) => b.id.toString().localeCompare(a.id.toString()));
+  };
+
+  const activities = getFilteredActivities();
+
+  if (!user) return null;
+  return (
+    <div className="min-h-screen bg-slate-100 font-sans pb-10">
+      <div className="h-64 bg-slate-900 rounded-b-[3.5rem] relative overflow-hidden shadow-2xl">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[60px] opacity-30"></div>
+          <div className="absolute top-10 -right-20 w-72 h-72 bg-purple-600 rounded-full mix-blend-screen filter blur-[60px] opacity-30"></div>
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+      </div>
+
+      <div className="px-6 -mt-44 relative z-10">
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <p className="text-blue-300 text-[10px] font-bold uppercase tracking-widest mb-1">Status: Aktif</p>
+            <h2 className="text-3xl font-black text-white leading-tight">{user.name}</h2>
+            <div className="mt-2 inline-flex items-center px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide">{user.role}</span>
+            </div>
+          </div>
+          <button onClick={() => setCurrentScreen('profile')} className="w-14 h-14 bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl flex items-center justify-center text-white hover:bg-white hover:text-slate-900 transition-all shadow-lg">
+            <User size={24} />
+          </button>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 shadow-xl border border-slate-200 mb-6">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center">
+                    <CalendarDays className="w-4 h-4 mr-2 text-blue-500" />
+                    Monitoring Harian
+                </h3>
+                <input 
+                    type="date" 
+                    value={selectedDate} 
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="text-xs font-bold text-slate-500 bg-slate-50 border-none rounded-lg p-1.5 focus:ring-1 focus:ring-blue-500"
+                />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-5">
+                <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 text-center">
+                    <div className="flex justify-center text-orange-500 mb-1"><Sunrise size={18} /></div>
+                    <p className="text-[10px] font-bold text-orange-400 uppercase">Pagi</p>
+                    <p className="text-xl font-black text-slate-800">{getApelData('Pagi')}</p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
+                    <div className="flex justify-center text-blue-500 mb-1"><Sun size={18} /></div>
+                    <p className="text-[10px] font-bold text-blue-400 uppercase">Siang</p>
+                    <p className="text-xl font-black text-slate-800">{getApelData('Siang')}</p>
+                </div>
+                <div className="bg-indigo-50 p-3 rounded-2xl border border-indigo-100 text-center">
+                    <div className="flex justify-center text-indigo-500 mb-1"><Moon size={18} /></div>
+                    <p className="text-[10px] font-bold text-indigo-400 uppercase">Malam</p>
+                    <p className="text-xl font-black text-slate-800">{getApelData('Malam')}</p>
+                </div>
+            </div>
+
+            <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 ml-1">Timeline Kegiatan</h4>
+                <div className="space-y-0 h-96 overflow-y-auto pr-1 scrollbar-hide">
+                    {activities.length === 0 ? (
+                        <p className="text-center text-slate-400 text-xs py-10 italic bg-slate-50 rounded-xl">Tidak ada kegiatan pada tanggal ini.</p>
+                    ) : (
+                        activities.map((act, idx) => (
+                            <div key={idx} className="flex gap-4 pb-6 relative last:pb-0 group">
+                                <div className="w-12 text-right pt-0.5 flex-shrink-0">
+                                    <span className="text-xs font-bold text-slate-500">{act.time}</span>
+                                </div>
+                                <div className="relative flex flex-col items-center">
+                                     <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm z-10 relative">
+                                        {idx === 0 && selectedDate === new Date().toISOString().split('T')[0] && (
+                                            <div className="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-75"></div>
+                                        )}
+                                     </div>
+                                     {idx !== activities.length - 1 && (
+                                        <div className="absolute top-3 w-0.5 h-full bg-slate-100 group-hover:bg-slate-200 transition-colors"></div>
+                                     )}
+                                </div>
+                                <div className="flex-1 bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-blue-200 hover:shadow-sm transition-all mb-2">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-800">{act.name}</p>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{act.user}</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-slate-600 leading-relaxed">{act.desc}</p>
+                                    {(act.images?.length > 0 || act.image) && (
+                                        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                                            {(act.images || [act.image]).map((img, i) => (
+                                                <img key={i} src={img} alt="Bukti" className="w-16 h-16 object-cover rounded-lg border border-slate-200 shadow-sm" />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+
+        {user.role !== 'Viewer' && (
+            <div className="grid grid-cols-3 gap-3">
+                <MenuCard 
+                    icon={QrCode} 
+                    title="Kontrol" 
+                    desc="Keliling" 
+                    color="text-blue-600"
+                    onClick={() => setCurrentScreen('scan')}
+                    variant="col"
+                />
+                <MenuCard 
+                    icon={Users} 
+                    title="Apel" 
+                    desc="Hunian" 
+                    color="text-emerald-600"
+                    onClick={() => setCurrentScreen('apel')}
+                    variant="col"
+                />
+                <MenuCard 
+                    icon={ClipboardList} 
+                    title="Kegiatan" 
+                    desc="Pos" 
+                    color="text-orange-600"
+                    onClick={() => setCurrentScreen('activity')}
+                    variant="col"
+                />
+            </div>
+        )}
+
+        {user.role === 'Super Admin' && (
+            <div className="mt-4 pt-4 border-t border-slate-200">
+                <MenuCard 
+                    icon={PlusCircle} 
+                    title="Manajemen Titik (Admin)" 
+                    desc="Kelola QR Code" 
+                    color="text-purple-600"
+                    onClick={() => setCurrentScreen('generator')}
+                />
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ScanScreen = ({ setCurrentScreen, qrDatabase, setScanHistory, scanHistory }) => {
+  const [result, setResult] = useState(null);
+  const [tempScan, setTempScan] = useState(null); 
+  const [condition, setCondition] = useState('Aman');
+  const [description, setDescription] = useState('');
+  const scannerRef = useRef(null);
+  const [status, setStatus] = useState('idle');
+
+  const startCam = async () => {
+    if(!window.Html5Qrcode) return;
+    if(!scannerRef.current) scannerRef.current = new window.Html5Qrcode("reader");
+    try {
+      await scannerRef.current.start({ facingMode: "environment" }, { fps: 15, qrbox: 250, aspectRatio: 1 }, (txt) => handleScan(txt), () => {});
+      setStatus('scanning');
+    } catch(e) { console.error(e); }
+  };
+
+  const stopCam = async () => {
+    if(scannerRef.current?.isScanning) {
+      await scannerRef.current.stop();
+      scannerRef.current.clear();
+      setStatus('idle');
+    }
+  };
+
+  const handleScan = (txt) => {
+    stopCam();
+    const point = qrDatabase.find(q => q.id === txt);
+    const time = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+    const dateISO = new Date().toISOString().split('T')[0];
+    if(point) { setTempScan({ ...point, time, dateISO }); } 
+    else { setResult({ id: txt, valid: false }); setStatus('error'); }
+  };
+
+  const handleSaveScan = () => {
+    if (!tempScan) return;
+    setScanHistory(prev => [{loc: tempScan.location, time: tempScan.time, status: condition, desc: description, id: Date.now(), dateISO: tempScan.dateISO}, ...prev]);
+    setResult({ ...tempScan, valid: true, status: condition });
+    setTempScan(null);
+    setCondition('Aman');
+    setDescription('');
+  };
+
+  useEffect(() => {
+    if(!window.Html5Qrcode) {
+      const s = document.createElement('script');
+      s.src = "https://unpkg.com/html5-qrcode";
+      s.async = true;
+      s.onload = () => setTimeout(startCam, 500);
+      document.body.appendChild(s);
+    } else { setTimeout(startCam, 100); }
+    return () => stopCam();
+  }, []);
+
+  const resetScan = () => { setResult(null); setTempScan(null); startCam(); };
+
+  const statusColors = {
+    'Aman': 'bg-green-500 hover:bg-green-600',
+    'Rawan': 'bg-yellow-500 hover:bg-yellow-600',
+    'Waspada': 'bg-orange-500 hover:bg-orange-600',
+    'Bahaya': 'bg-red-600 hover:bg-red-700',
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white flex flex-col font-sans">
+      <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-20 bg-gradient-to-b from-black/80 to-transparent">
+        <button onClick={() => setCurrentScreen('home')} className="w-10 h-10 bg-white/10 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/20">
+          <X size={20} />
+        </button>
+        <span className="font-bold tracking-wider text-sm uppercase opacity-80">Scanner Mode</span>
+        <div className="w-10"></div>
+      </div>
+
+      <div className="flex-1 relative flex flex-col">
+        <div className="relative flex-1 bg-slate-900 overflow-hidden">
+           {!result && !tempScan && (
+             <div id="reader" className="w-full h-full [&>video]:object-cover [&>video]:h-full [&>video]:w-full"></div>
+           )}
+           {!result && !tempScan && (
+             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+               <div className="w-64 h-64 border-2 border-white/30 rounded-3xl relative">
+                  <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-blue-500 rounded-tl-2xl"></div>
+                  <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-blue-500 rounded-tr-2xl"></div>
+                  <div className="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-blue-500 rounded-bl-2xl"></div>
+                  <div className="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-blue-500 rounded-br-2xl"></div>
+                  <div className="absolute inset-0 bg-blue-500/10 animate-pulse"></div>
+               </div>
+               <p className="mt-8 text-sm font-medium text-white/70 bg-black/50 px-4 py-2 rounded-full backdrop-blur">Arahkan kamera ke QR Code</p>
+             </div>
+           )}
+           {tempScan && (
+               <div className="absolute inset-0 flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm z-30">
+                   <div className="bg-white text-slate-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-fade-in-up max-h-[90vh] overflow-y-auto">
+                       <div className="flex items-center mb-6">
+                           <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4 text-blue-600"><MapPin size={24} /></div>
+                           <div><h3 className="font-bold text-lg leading-tight">{tempScan.location}</h3><p className="text-xs text-slate-500">{tempScan.time}</p></div>
+                       </div>
+                       <div className="mb-4">
+                           <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Status Keadaan</label>
+                           <div className="grid grid-cols-2 gap-2">
+                               {['Aman', 'Rawan', 'Waspada', 'Bahaya'].map(opt => (
+                                   <button key={opt} onClick={() => setCondition(opt)} className={`py-3 rounded-xl text-sm font-bold transition-all ${condition === opt ? statusColors[opt] + ' text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{opt}</button>
+                               ))}
+                           </div>
+                       </div>
+                       <div className="mb-6">
+                           <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Catatan (Opsional)</label>
+                           <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 focus:ring-2 focus:ring-blue-400 outline-none" rows="3" placeholder="Deskripsikan kondisi..." value={description} onChange={e => setDescription(e.target.value)}></textarea>
+                       </div>
+                       <button onClick={handleSaveScan} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition shadow-xl">Simpan Laporan</button>
+                       <button onClick={resetScan} className="w-full mt-3 text-slate-400 text-sm font-bold hover:text-slate-600">Batal Scan</button>
+                   </div>
+               </div>
+           )}
+           {result && (
+              <div className="absolute inset-0 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm z-30">
+                <div className="bg-white text-slate-900 w-full max-w-sm rounded-3xl p-6 text-center animate-fade-in-up">
+                  <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${result.valid ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {result.valid ? <CheckCircle size={40} /> : <AlertTriangle size={40} />}
+                  </div>
+                  <h3 className="text-xl font-bold mb-1">{result.valid ? 'Laporan Tersimpan' : 'Tidak Dikenal'}</h3>
+                  <p className="text-slate-500 text-sm mb-6">{result.location || `ID: ${result.id}`}</p>
+                  {result.valid && (
+                    <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                      <div className="flex justify-between text-sm mb-1"><span className="text-slate-400">Waktu</span><span className="font-bold font-mono">{result.time}</span></div>
+                      <div className="flex justify-between text-sm mb-1"><span className="text-slate-400">Status</span><span className={`font-bold ${result.status === 'Aman' ? 'text-green-600' : result.status === 'Rawan' ? 'text-yellow-600' : result.status === 'Waspada' ? 'text-orange-600' : 'text-red-600'}`}>{result.status.toUpperCase()}</span></div>
+                    </div>
+                  )}
+                  <button onClick={resetScan} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition">Scan Selanjutnya</button>
+                </div>
+              </div>
+           )}
+        </div>
+        <div className="h-1/3 bg-white text-slate-900 rounded-t-3xl -mt-6 z-10 p-6 flex flex-col">
+           <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
+           <h4 className="font-bold text-lg mb-4 flex items-center"><History className="mr-2 text-slate-400" size={18} /> Riwayat Sesi Ini</h4>
+           <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+              {scanHistory.length === 0 ? <p className="text-center text-slate-400 text-sm py-4 italic">Belum ada data scan.</p> : scanHistory.map(log => (
+                  <div key={log.id} className="flex flex-col p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center">
+                            <div className={`w-2 h-2 rounded-full mr-2 ${log.status === 'Aman' ? 'bg-green-500' : log.status === 'Rawan' ? 'bg-yellow-500' : log.status === 'Waspada' ? 'bg-orange-500' : 'bg-red-600'}`}></div>
+                            <p className="font-bold text-sm text-slate-700">{log.loc}</p>
+                          </div>
+                          <span className="font-mono text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">{log.time}</span>
+                      </div>
+                      <div className="pl-4 flex justify-between items-end">
+                        <p className="text-xs text-slate-500 line-clamp-1 italic">{log.desc || "Tidak ada catatan."}</p>
+                        <span className={`text-[10px] font-bold uppercase ${log.status === 'Aman' ? 'text-green-600' : log.status === 'Rawan' ? 'text-yellow-600' : log.status === 'Waspada' ? 'text-orange-600' : 'text-red-600'}`}>{log.status}</span>
+                      </div>
+                  </div>
+              ))}
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ApelScreen = ({ user, setCurrentScreen, apelHistory, setApelHistory, apelInputs, setApelInputs, selectedShift, setSelectedShift }) => {
+  const [viewMode, setViewMode] = useState('input');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const blocks = Object.keys(BLOCK_CONFIG);
+  const handleInput = (key, val) => { setApelInputs(p => ({...p, [key]: parseInt(val)||0})); };
+  const total = Object.values(apelInputs).reduce((a,b)=>a+b, 0);
+  const save = () => {
+    const todayISO = new Date().toISOString().split('T')[0];
+    setApelHistory(p => [{id:Date.now(), pic:user.name, shift:selectedShift, total, time:new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }), dateISO: todayISO}, ...p]);
+    setShowConfirm(false); setApelInputs({}); setViewMode('history');
+  };
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
+      <div className="bg-white p-6 pb-4 pt-8 border-b border-slate-100 z-20">
+        <Header title="Apel Hunian" subtitle="Laporan WBP" onBack={() => setCurrentScreen('home')} />
+        <div className="flex bg-slate-100 p-1 rounded-2xl">
+          {['input', 'history'].map(m => (
+            <button key={m} onClick={() => setViewMode(m)} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wide rounded-xl transition-all ${viewMode === m ? 'bg-white text-blue-600 border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>{m === 'input' ? 'Input Data' : 'Riwayat'}</button>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 pb-48">
+        {viewMode === 'input' ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm">
+              <span className="text-blue-800 font-bold text-sm">Pilih Shift Jaga</span>
+              <select value={selectedShift} onChange={e=>setSelectedShift(e.target.value)} className="bg-white border-none text-sm font-bold text-slate-700 py-1.5 px-3 rounded-lg focus:ring-0 cursor-pointer"><option>Pagi</option><option>Siang</option><option>Malam</option></select>
+            </div>
+            {blocks.map(block => (
+              <GlassCard key={block} className="p-5">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                  <h3 className="font-bold text-slate-800 flex items-center"><div className="w-1.5 h-6 bg-blue-500 rounded-full mr-2"></div>{block}</h3>
+                  {block === 'Cempaka' && <span className="px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold uppercase rounded-md shadow-sm">Selker</span>}
+                </div>
+                <div className="space-y-3">
+                  {[...Array(BLOCK_CONFIG[block].floors)].map((_, i) => (
+                    <div key={i} className="flex items-center justify-between"><span className="text-sm font-medium text-slate-500">Lantai {i+1}</span><input type="number" className="w-24 bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-inner" placeholder="0" value={apelInputs[`${block}-L${i+1}`] || ''} onChange={e => handleInput(`${block}-L${i+1}`, e.target.value)} /></div>
+                  ))}
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {apelHistory.map(log => (
+              <GlassCard key={log.id} className="p-5 flex justify-between items-center">
+                <div><p className="font-bold text-slate-800">{log.pic}</p><p className="text-xs text-slate-400 mt-1 font-medium bg-slate-100 px-2 py-0.5 rounded-lg inline-block">{log.time} • Shift {log.shift}</p></div>
+                <div className="text-right"><span className="block text-2xl font-black text-blue-600">{log.total}</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">WBP</span></div>
+              </GlassCard>
+            ))}
+          </div>
+        )}
+      </div>
+      {viewMode === 'input' && (
+        <div className="fixed bottom-0 left-0 w-full p-6 bg-white/90 backdrop-blur-md border-t border-slate-200 z-30">
+          <div className="flex justify-between items-center mb-3 px-1"><span className="text-sm font-medium text-slate-500">Total WBP Terhitung</span><span className="text-lg font-black text-slate-800">{total} Orang</span></div>
+          <button onClick={() => setShowConfirm(true)} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition active:scale-95 flex items-center justify-center"><Save className="w-5 h-5 mr-2" /> Simpan Laporan</button>
+        </div>
+      )}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 animate-scale-up">
+            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4"><CheckCircle size={32} /></div>
+            <h3 className="text-xl font-bold text-center text-slate-900 mb-2">Konfirmasi Data</h3>
+            <p className="text-center text-slate-500 text-sm mb-6">Pastikan data jumlah WBP sudah benar sebelum menyimpan.</p>
+            <div className="bg-slate-50 p-4 rounded-2xl mb-6 text-center border border-slate-100"><p className="text-xs uppercase font-bold text-slate-400">Total Keseluruhan</p><p className="text-3xl font-black text-slate-800">{total}</p></div>
+            <div className="grid grid-cols-2 gap-3"><button onClick={() => setShowConfirm(false)} className="py-3 font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-sm">Batal</button><button onClick={save} className="py-3 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700">Ya, Simpan</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog }) => {
+  const [desc, setDesc] = useState('');
+  const [name, setName] = useState(''); 
+  const [time, setTime] = useState(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+  const [imagePreviews, setImagePreviews] = useState([]); 
+  const fileInputRef = useRef(null);
+  const [viewImage, setViewImage] = useState(null);
+
+  const handleImageUpload = (e) => {
+      const files = Array.from(e.target.files);
+      files.forEach(file => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              const img = new Image();
+              img.src = reader.result;
+              img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  ctx.drawImage(img, 0, 0);
+                  const date = new Date();
+                  const timestampText = date.toLocaleString('id-ID');
+                  const fontSize = Math.max(24, Math.floor(img.height * 0.03));
+                  ctx.font = `bold ${fontSize}px sans-serif`;
+                  ctx.textAlign = 'right';
+                  ctx.textBaseline = 'bottom';
+                  const x = canvas.width - (fontSize * 0.5);
+                  const y = canvas.height - (fontSize * 0.5);
+                  ctx.strokeStyle = 'black';
+                  ctx.lineWidth = fontSize / 6;
+                  ctx.strokeText(timestampText, x, y);
+                  ctx.fillStyle = 'white';
+                  ctx.fillText(timestampText, x, y);
+                  setImagePreviews(prev => [...prev, canvas.toDataURL('image/jpeg', 0.8)]);
+              };
+          };
+          reader.readAsDataURL(file);
+      });
+  };
+  const removeImage = (index) => { setImagePreviews(prev => prev.filter((_, i) => i !== index)); };
+  const save = (e) => {
+      e.preventDefault();
+      if(!desc) return alert("Isi uraian kegiatan!");
+      if(!name) return alert("Isi nama yang bersangkutan!");
+      const todayISO = new Date().toISOString().split('T')[0];
+      setActivityLog(p => [{id:Date.now(), time, name, desc, user: user.name, images: imagePreviews, dateISO: todayISO}, ...p]);
+      setDesc(''); setName(''); setImagePreviews([]);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
+      <div className="bg-white p-6 pt-8 border-b border-slate-100 sticky top-0 z-20">
+          <Header title="Pos Antara" subtitle="Catatan Kegiatan" onBack={() => setCurrentScreen('home')} />
+      </div>
+      {viewImage && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setViewImage(null)}>
+          <button className="absolute top-6 right-6 text-white/70 hover:text-white bg-black/50 rounded-full p-2 transition-all"><X size={28} /></button>
+          <img src={viewImage} alt="Full View" className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain animate-scale-up" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+      <div className="p-6 flex-1 overflow-y-auto">
+          <GlassCard className="p-5 mb-8">
+              <form onSubmit={save}>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Waktu</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 font-bold text-slate-700 focus:ring-2 focus:ring-orange-400" /></div>
+                    <div><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nama Subjek</label><input type="text" value={name} onChange={e=>setName(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 font-bold text-slate-700 focus:ring-2 focus:ring-orange-400" placeholder="Petugas/Tamu/WBP" /></div>
+                  </div>
+                  <div className="mb-4"><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Uraian Kegiatan</label><textarea rows="3" value={desc} onChange={e=>setDesc(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-700 focus:ring-2 focus:ring-orange-400" placeholder="Jelaskan aktivitas..."></textarea></div>
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Dokumentasi Foto</label>
+                      <input type="file" accept="image/*" multiple capture="environment" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
+                      <button type="button" onClick={() => fileInputRef.current.click()} className="w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl text-slate-400 font-bold hover:border-orange-400 hover:text-orange-500 hover:bg-orange-50 transition flex flex-col items-center justify-center bg-slate-50 mb-3"><Camera className="mb-2" size={24} /><span>Ambil / Upload Foto (Bisa Banyak)</span></button>
+                      {imagePreviews.length > 0 && (<div className="grid grid-cols-2 gap-3">{imagePreviews.map((img, idx) => (<div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 group h-32"><img src={img} alt={`Preview ${idx}`} className="w-full h-full object-cover" /><button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition"><Trash2 size={14} /></button></div>))}</div>)}
+                  </div>
+                  <button className="w-full bg-gradient-to-r from-orange-500 to-pink-500 text-white font-bold py-4 rounded-2xl active:scale-95 transition flex items-center justify-center"><Save size={20} className="mr-2" /> Simpan Laporan</button>
+              </form>
+          </GlassCard>
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center text-sm uppercase tracking-wider"><History size={18} className="mr-2 text-slate-400"/> Riwayat Hari Ini</h3>
+          <div className="space-y-4 pb-20">
+              {activityLog.length === 0 ? <p className="text-center text-slate-400 text-sm italic py-4">Belum ada kegiatan tercatat.</p> : activityLog.map(l => (
+                  <div key={l.id} className="flex relative pl-6 pb-6 last:pb-0 border-l-2 border-slate-200 ml-3">
+                      <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-orange-500 border-4 border-white"></div>
+                      <div className="w-full">
+                          <div className="flex justify-between items-start mb-1">
+                              <div><span className="text-xs font-bold text-slate-400 mr-2">{l.time}</span><span className="text-sm font-bold text-slate-800">{l.name}</span></div>
+                              <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-500 border border-slate-200">Oleh: {l.user}</span>
+                          </div>
+                          <div className="bg-white p-4 rounded-2xl border border-slate-100">
+                              <p className="text-sm text-slate-700 leading-relaxed font-medium">{l.desc}</p>
+                              {l.images && l.images.length > 0 && (<div className="mt-3 grid grid-cols-2 gap-2">{l.images.map((img, i) => (<button key={i} onClick={() => setViewImage(img)} className="rounded-xl overflow-hidden border border-slate-100 h-24 relative group"><img src={img} alt="Bukti" className="w-full h-full object-cover transition-transform group-hover:scale-105" /><div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center"><Eye className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" size={20} /></div></button>))}</div>)}
+                          </div>
+                      </div>
+                  </div>
+              ))}
+          </div>
+      </div>
+    </div>
+  );
+};
+
+const GeneratorScreen = ({ user, setCurrentScreen, qrDatabase, setQrDatabase }) => {
+  if(user.role !== 'Super Admin') { setTimeout(()=>setCurrentScreen('home'),0); return null;}
+  const [loc, setLoc] = useState('');
+  const add = (e) => { e.preventDefault(); if(loc) { setQrDatabase(p => [...p, {id:`QR_${Date.now()}`, location: loc}]); setLoc(''); }};
+
+  return (
+      <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
+          <div className="bg-white p-6 pt-8 border-b border-slate-100 sticky top-0 z-20">
+              <Header title="Admin QR" subtitle="Manajemen Titik" onBack={() => setCurrentScreen('home')} />
+          </div>
+          <div className="p-6 flex-1 flex flex-col relative pb-32">
+              <GlassCard className="p-5 mb-6">
+                  <form onSubmit={add} className="flex gap-3">
+                      <input value={loc} onChange={e=>setLoc(e.target.value)} placeholder="Nama Lokasi Baru..." className="flex-1 bg-slate-50 border-none rounded-xl px-4 focus:ring-2 focus:ring-purple-500 text-slate-700 font-medium" />
+                      <button className="w-12 h-12 bg-purple-600 text-white rounded-xl flex items-center justify-center hover:bg-purple-700 active:scale-90 transition"><PlusCircle /></button>
+                  </form>
+              </GlassCard>
+              <div className="space-y-3">
+                  {qrDatabase.map((q, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center group hover:bg-slate-50 transition">
+                          <div className="flex items-center"><div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mr-3 text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-500 transition"><MapPin size={18} /></div><span className="font-bold text-slate-700">{q.location}</span></div>
+                          <button onClick={()=>handlePrintSingle(q)} className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition"><Printer size={18}/></button>
+                      </div>
+                  ))}
+              </div>
+          </div>
+          {/* FIXED BOTTOM FOOTER FOR PRINT BUTTON */}
+          <div className="fixed bottom-0 left-0 w-full p-6 bg-white/90 backdrop-blur-md border-t border-slate-200 z-30">
+              <button onClick={()=>handlePrintAll(qrDatabase)} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-slate-800 transition active:scale-95 flex items-center justify-center">
+                  <Printer className="mr-3 w-6 h-6" /> Cetak Semua Titik
+              </button>
+          </div>
+      </div>
+  );
+};
+
+const ProfileScreen = ({ user, setUser, setCurrentScreen }) => (
+  <div className="min-h-screen bg-slate-50 font-sans p-6 flex flex-col items-center pt-24 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-100/50 to-transparent z-0"></div>
+      <div className="relative z-10 w-full flex flex-col items-center">
+          <div className="w-32 h-32 bg-white rounded-[2rem] flex items-center justify-center mb-6 relative border-4 border-white"><User size={64} className="text-slate-300" /><div className="absolute -bottom-2 -right-2 w-10 h-10 bg-green-500 border-4 border-white rounded-full flex items-center justify-center text-white"><CheckCircle size={16} strokeWidth={4} /></div></div>
+          <h2 className="text-3xl font-black text-slate-800 mb-1 tracking-tight">{user.name}</h2>
+          <p className="text-slate-500 font-bold bg-white px-6 py-2 rounded-full text-sm mb-12 border border-slate-100 uppercase tracking-wide">{user.role}</p>
+          <div className="w-full max-w-xs space-y-4">
+              <button className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-4 rounded-2xl hover:bg-slate-50 flex items-center justify-center transition active:scale-95"><Edit3 size={18} className="mr-2 text-slate-400" /> Edit Profil</button>
+              <button onClick={() => { localStorage.removeItem('sipola_user'); localStorage.removeItem('sipola_screen'); setUser(null); setCurrentScreen('login'); }} className="w-full bg-red-50 text-red-600 font-bold py-4 rounded-2xl hover:bg-red-100 transition flex items-center justify-center active:scale-95 border border-red-100"><LogOut size={18} className="mr-2" /> Keluar Aplikasi</button>
+          </div>
+          <button onClick={() => setCurrentScreen('home')} className="mt-8 text-slate-400 hover:text-slate-600 font-bold text-sm uppercase tracking-widest">Kembali</button>
+      </div>
+  </div>
+);
+
+// --- APP COMPONENT ---
+const App = () => {
+  const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem('sipola_user')) || null; } catch { return null; } });
+  const [currentScreen, setCurrentScreen] = useState(() => { if (!localStorage.getItem('sipola_user')) return 'login'; return localStorage.getItem('sipola_screen') || 'login'; });
+  
+  useEffect(() => {
+    localStorage.setItem('sipola_screen', currentScreen);
+    if (user) localStorage.setItem('sipola_user', JSON.stringify(user));
+    else localStorage.removeItem('sipola_user');
+  }, [currentScreen, user]);
+
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.id = 'sipola-global-styles';
+    style.innerHTML = `::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } ::-webkit-scrollbar-thumb:hover { background: #94a3b8; } * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }`;
+    document.head.appendChild(style);
+    return () => { const existingStyle = document.getElementById('sipola-global-styles'); if (existingStyle) document.head.removeChild(existingStyle); };
+  }, []);
+
+  const [qrDatabase, setQrDatabase] = useState(INITIAL_QR_DATA);
+  const [scanHistory, setScanHistory] = useState(DUMMY_DATA.scans); 
+  const [apelHistory, setApelHistory] = useState(DUMMY_DATA.apelData); 
+  const [activityLog, setActivityLog] = useState(DUMMY_DATA.activities);
+  const [apelInputs, setApelInputs] = useState({});
+  const [selectedShift, setSelectedShift] = useState('Pagi'); 
+
+  switch(currentScreen) {
+    case 'login': return <LoginScreen setUser={setUser} setCurrentScreen={setCurrentScreen} />;
+    case 'home': return <HomeScreen user={user} setCurrentScreen={setCurrentScreen} apelHistory={apelHistory} activityLog={activityLog} />;
+    case 'scan': return <ScanScreen setCurrentScreen={setCurrentScreen} qrDatabase={qrDatabase} setScanHistory={setScanHistory} scanHistory={scanHistory} />;
+    case 'apel': return <ApelScreen user={user} setCurrentScreen={setCurrentScreen} apelHistory={apelHistory} setApelHistory={setApelHistory} apelInputs={apelInputs} setApelInputs={setApelInputs} selectedShift={selectedShift} setSelectedShift={setSelectedShift} />;
+    case 'activity': return <ActivityScreen user={user} setCurrentScreen={setCurrentScreen} activityLog={activityLog} setActivityLog={setActivityLog} />;
+    case 'generator': return <GeneratorScreen user={user} setCurrentScreen={setCurrentScreen} qrDatabase={qrDatabase} setQrDatabase={setQrDatabase} />;
+    case 'profile': return <ProfileScreen user={user} setUser={setUser} setCurrentScreen={setCurrentScreen} />;
+    default: return <LoginScreen setUser={setUser} setCurrentScreen={setCurrentScreen} />;
+  }
+};
+
+export default App;
