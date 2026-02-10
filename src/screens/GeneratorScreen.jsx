@@ -20,25 +20,26 @@ const GeneratorScreen = ({ user, setCurrentScreen, qrDatabase, setQrDatabase }) 
         setSaving(true);
         const qrCode = `QR_${loc.toUpperCase().replace(/\s+/g, '_')}_${Date.now()}`;
 
-        if (isSupabaseConfigured()) {
-            const { data, error } = await supabase.from('qr_locations').insert({
-                location_name: loc,
-                qr_code: qrCode
-            }).select().single();
-
-            if (error) {
-                alert('Gagal menambahkan: ' + error.message);
-                setSaving(false);
-                return;
-            }
-
-            setQrDatabase(p => [...p, { id: qrCode, location: loc, dbId: data.id }]);
-        } else {
-            setQrDatabase(p => [...p, { id: qrCode, location: loc }]);
-        }
-
+        // Always save locally first
+        setQrDatabase(p => [...p, { id: qrCode, location: loc }]);
         setLoc('');
         setSaving(false);
+
+        // Then try Supabase in background
+        if (isSupabaseConfigured()) {
+            try {
+                const { data, error } = await supabase.from('qr_locations').insert({
+                    location_name: loc,
+                    qr_code: qrCode
+                }).select().single();
+
+                if (error) {
+                    console.error('Supabase QR save error:', error.message);
+                }
+            } catch (err) {
+                console.error('Supabase QR save error:', err);
+            }
+        }
     };
 
     return (
