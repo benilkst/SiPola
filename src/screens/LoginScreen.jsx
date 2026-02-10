@@ -15,40 +15,91 @@ const LoginScreen = ({ setUser, setCurrentScreen }) => {
         setLoading(true);
         setError('');
 
-        // Always try local accounts first
+        // Validate against local accounts list
         const acc = ACCOUNTS.find(
             a => a.username.toLowerCase() === username.toLowerCase() && a.password === password
         );
 
-        if (acc) {
-            setUser({ name: acc.name, role: acc.role });
-            setCurrentScreen('home');
+        if (!acc) {
+            setError('Login gagal. Periksa username dan password.');
             setLoading(false);
             return;
         }
 
-        // If local login fails and Supabase is configured, try Supabase Auth
+        // If Supabase is configured, authenticate via Supabase Auth
         if (isSupabaseConfigured()) {
-            const email = `${username.toLowerCase().replace(/\s+/g, '')}@sipola.local`;
-            const { data, error: authError } = await supabase.auth.signInWithPassword({
+            const email = `${acc.username.toLowerCase().replace(/\s+/g, '')}@sipola.local`;
+
+            // Try to sign in first
+            let { data, error: signInError } = await supabase.auth.signInWithPassword({
                 email,
-                password
+                password: acc.password
             });
 
-            if (authError) {
-                setError('Login gagal. Periksa username dan password.');
-                setLoading(false);
-                return;
+            // If user not registered yet, auto sign-up then sign-in
+            if (signInError) {
+                const { error: signUpError } = await supabase.auth.signUp({
+                    email,
+                    password: acc.password,
+                    options: {
+                        data: { name: acc.name, role: acc.role }
+                    }
+                });
+
+                if (signUpError) {
+                    console.error('Sign up error:', signUpError.message);
+                    // Fallback to local login
+                    setUser({ name: acc.name, role: acc.role });
+                    setCurrentScreen('home');
+                    setLoading(false);
+                    return;
+                }
+
+                // Try sign in again after registration
+                const { error: retryError } = await supabase.auth.signInWithPassword({
+                    email,
+                    password: acc.password
+                });
+
+                if (retryError) {
+                    console.error('Retry sign in error:', retryError.message);
+                    // Fallback to local login
+                    setUser({ name: acc.name, role: acc.role });
+                    setCurrentScreen('home');
+                    setLoading(false);
+                    return;
+                }
             }
-            // Session will be handled by App.jsx onAuthStateChange
+
+            // Supabase session active — App.jsx onAuthStateChange handles user state
+            setLoading(false);
         } else {
-            setError('Login gagal. Periksa username dan password.');
+            // No Supabase — local login only
+            setUser({ name: acc.name, role: acc.role });
+            setCurrentScreen('home');
             setLoading(false);
         }
     };
 
     const handleViewerMode = async () => {
         setLoading(true);
+        if (isSupabaseConfigured()) {
+            const email = 'viewer@sipola.local';
+            const pw = 'viewer123456';
+
+            let { error: signInError } = await supabase.auth.signInWithPassword({ email, password: pw });
+
+            if (signInError) {
+                // Auto register viewer
+                await supabase.auth.signUp({
+                    email,
+                    password: pw,
+                    options: { data: { name: 'Viewer', role: 'Viewer' } }
+                });
+                await supabase.auth.signInWithPassword({ email, password: pw });
+            }
+        }
+        // Fallback: set user locally too
         setUser({ name: 'Viewer', role: 'Viewer' });
         setCurrentScreen('home');
         setLoading(false);
