@@ -11,43 +11,76 @@ import ProfileScreen from './screens/ProfileScreen';
 
 const DUMMY_DATA = generateDummyData();
 
-const App = () => {
-    // Auth state
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [currentScreen, setCurrentScreen] = useState('login');
+// Helper: load from localStorage with fallback
+const loadLocal = (key, fallback) => {
+    try {
+        const stored = localStorage.getItem(key);
+        return stored ? JSON.parse(stored) : fallback;
+    } catch { return fallback; }
+};
 
-    // Data state (will be synced with Supabase when configured)
-    const [qrDatabase, setQrDatabase] = useState(INITIAL_QR_DATA);
-    const [scanHistory, setScanHistory] = useState(DUMMY_DATA.scans);
-    const [apelHistory, setApelHistory] = useState(DUMMY_DATA.apelData);
-    const [activityLog, setActivityLog] = useState(DUMMY_DATA.activities);
+const App = () => {
+    // Auth state - restore from localStorage
+    const [user, setUser] = useState(() => loadLocal('sipola_user', null));
+    const [loading, setLoading] = useState(true);
+    const [currentScreen, setCurrentScreen] = useState(() => {
+        const u = loadLocal('sipola_user', null);
+        return u ? (loadLocal('sipola_screen', 'home')) : 'login';
+    });
+
+    // Data state - restore from localStorage with dummy fallback
+    const [qrDatabase, setQrDatabase] = useState(() => loadLocal('sipola_qr', INITIAL_QR_DATA));
+    const [scanHistory, setScanHistory] = useState(() => loadLocal('sipola_scans', DUMMY_DATA.scans));
+    const [apelHistory, setApelHistory] = useState(() => loadLocal('sipola_apel', DUMMY_DATA.apelData));
+    const [activityLog, setActivityLog] = useState(() => loadLocal('sipola_activities', DUMMY_DATA.activities));
     const [apelInputs, setApelInputs] = useState({});
     const [selectedShift, setSelectedShift] = useState('Pagi');
 
-    // Initialize auth state
+    // Persist ALL data to localStorage whenever it changes
+    useEffect(() => {
+        localStorage.setItem('sipola_qr', JSON.stringify(qrDatabase));
+    }, [qrDatabase]);
+
+    useEffect(() => {
+        localStorage.setItem('sipola_scans', JSON.stringify(scanHistory));
+    }, [scanHistory]);
+
+    useEffect(() => {
+        localStorage.setItem('sipola_apel', JSON.stringify(apelHistory));
+    }, [apelHistory]);
+
+    useEffect(() => {
+        localStorage.setItem('sipola_activities', JSON.stringify(activityLog));
+    }, [activityLog]);
+
+    useEffect(() => {
+        if (user) {
+            localStorage.setItem('sipola_user', JSON.stringify(user));
+        } else {
+            localStorage.removeItem('sipola_user');
+        }
+    }, [user]);
+
+    useEffect(() => {
+        localStorage.setItem('sipola_screen', currentScreen);
+    }, [currentScreen]);
+
+    // Initialize - just mark loading as done (data already loaded from localStorage)
     useEffect(() => {
         const initAuth = async () => {
             try {
                 if (isSupabaseConfigured()) {
-                    // Check for existing session
-                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-                    if (sessionError) {
-                        console.error('Session error:', sessionError);
-                        setLoading(false);
-                        return;
-                    }
-
+                    // Check for existing Supabase session
+                    const { data: { session } } = await supabase.auth.getSession();
                     if (session?.user) {
                         try {
-                            const { data: profile, error: profileError } = await supabase
+                            const { data: profile } = await supabase
                                 .from('profiles')
                                 .select('*')
                                 .eq('id', session.user.id)
                                 .single();
 
-                            if (profile && !profileError) {
+                            if (profile) {
                                 setUser({ id: session.user.id, name: profile.name, role: profile.role });
                                 setCurrentScreen('home');
                             }
@@ -57,7 +90,7 @@ const App = () => {
                     }
 
                     // Listen for auth changes
-                    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+                    supabase.auth.onAuthStateChange(async (event, session) => {
                         if (event === 'SIGNED_IN' && session?.user) {
                             try {
                                 const { data: profile } = await supabase
@@ -65,7 +98,6 @@ const App = () => {
                                     .select('*')
                                     .eq('id', session.user.id)
                                     .single();
-
                                 if (profile) {
                                     setUser({ id: session.user.id, name: profile.name, role: profile.role });
                                     setCurrentScreen('home');
@@ -78,41 +110,17 @@ const App = () => {
                             setCurrentScreen('login');
                         }
                     });
-
-                    setLoading(false);
-                    return () => subscription?.unsubscribe();
-                } else {
-                    // Demo mode - use localStorage
-                    try {
-                        const storedUser = JSON.parse(localStorage.getItem('sipola_user'));
-                        if (storedUser) {
-                            setUser(storedUser);
-                            setCurrentScreen(localStorage.getItem('sipola_screen') || 'home');
-                        }
-                    } catch (e) {
-                        console.warn('LocalStorage error:', e);
-                    }
-                    setLoading(false);
                 }
             } catch (error) {
                 console.error('Init auth error:', error);
-                setLoading(false);
             }
+            setLoading(false);
         };
 
         initAuth();
     }, []);
 
-    // Sync screen to localStorage in demo mode
-    useEffect(() => {
-        if (!isSupabaseConfigured()) {
-            localStorage.setItem('sipola_screen', currentScreen);
-            if (user) localStorage.setItem('sipola_user', JSON.stringify(user));
-            else localStorage.removeItem('sipola_user');
-        }
-    }, [currentScreen, user]);
-
-    // Fetch data from Supabase when user is logged in
+    // Try to fetch from Supabase when user logs in (optional sync)
     useEffect(() => {
         if (user && isSupabaseConfigured()) {
             fetchData();
@@ -123,23 +131,21 @@ const App = () => {
         if (!isSupabaseConfigured()) return;
 
         try {
-            // Fetch QR locations
             const { data: locations } = await supabase
                 .from('qr_locations')
                 .select('*')
                 .order('id');
-            if (locations) setQrDatabase(locations.map(l => ({ id: l.qr_code, location: l.location_name, dbId: l.id })));
+            if (locations?.length > 0) setQrDatabase(locations.map(l => ({ id: l.qr_code, location: l.location_name, dbId: l.id })));
         } catch (e) {
             console.warn('Failed to fetch QR locations:', e);
         }
 
         try {
-            // Fetch apel records
             const { data: apel } = await supabase
                 .from('apel_records')
                 .select('*')
                 .order('created_at', { ascending: false });
-            if (apel) setApelHistory(apel.map(a => ({
+            if (apel?.length > 0) setApelHistory(apel.map(a => ({
                 id: a.id,
                 pic: a.user_name,
                 shift: a.shift,
@@ -152,12 +158,11 @@ const App = () => {
         }
 
         try {
-            // Fetch activities
             const { data: activities } = await supabase
                 .from('activities')
                 .select('*')
                 .order('created_at', { ascending: false });
-            if (activities) setActivityLog(activities.map(a => ({
+            if (activities?.length > 0) setActivityLog(activities.map(a => ({
                 id: a.id,
                 time: a.time,
                 name: a.subject_name,
@@ -171,12 +176,11 @@ const App = () => {
         }
 
         try {
-            // Fetch scan records
             const { data: scans } = await supabase
                 .from('scan_records')
                 .select('*')
                 .order('created_at', { ascending: false });
-            if (scans) setScanHistory(scans.map(s => ({
+            if (scans?.length > 0) setScanHistory(scans.map(s => ({
                 id: s.id,
                 location: s.location_name,
                 status: s.status,
@@ -191,11 +195,10 @@ const App = () => {
     // Logout handler
     const handleLogout = async () => {
         if (isSupabaseConfigured()) {
-            await supabase.auth.signOut();
-        } else {
-            localStorage.removeItem('sipola_user');
-            localStorage.removeItem('sipola_screen');
+            try { await supabase.auth.signOut(); } catch (e) { console.warn(e); }
         }
+        localStorage.removeItem('sipola_user');
+        localStorage.removeItem('sipola_screen');
         setUser(null);
         setCurrentScreen('login');
     };
