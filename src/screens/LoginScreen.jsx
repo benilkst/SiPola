@@ -15,8 +15,20 @@ const LoginScreen = ({ setUser, setCurrentScreen }) => {
         setLoading(true);
         setError('');
 
+        // Always try local accounts first
+        const acc = ACCOUNTS.find(
+            a => a.username.toLowerCase() === username.toLowerCase() && a.password === password
+        );
+
+        if (acc) {
+            setUser({ name: acc.name, role: acc.role });
+            setCurrentScreen('home');
+            setLoading(false);
+            return;
+        }
+
+        // If local login fails and Supabase is configured, try Supabase Auth
         if (isSupabaseConfigured()) {
-            // Supabase Auth
             const email = `${username.toLowerCase().replace(/\s+/g, '')}@sipola.local`;
             const { data, error: authError } = await supabase.auth.signInWithPassword({
                 email,
@@ -28,41 +40,17 @@ const LoginScreen = ({ setUser, setCurrentScreen }) => {
                 setLoading(false);
                 return;
             }
-
             // Session will be handled by App.jsx onAuthStateChange
         } else {
-            // Demo mode - use local accounts
-            setTimeout(() => {
-                const acc = ACCOUNTS.find(
-                    a => a.username.toLowerCase() === username.toLowerCase() && a.password === password
-                );
-                if (acc) {
-                    setUser({ name: acc.name, role: acc.role });
-                    setCurrentScreen('home');
-                } else {
-                    setError('Login gagal. Periksa username dan password.');
-                }
-                setLoading(false);
-            }, 500);
+            setError('Login gagal. Periksa username dan password.');
+            setLoading(false);
         }
     };
 
     const handleViewerMode = async () => {
         setLoading(true);
-        if (isSupabaseConfigured()) {
-            // Sign in as viewer
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email: 'viewer@sipola.local',
-                password: 'viewer123'
-            });
-            if (error) {
-                setUser({ name: 'Viewer', role: 'Viewer' });
-                setCurrentScreen('home');
-            }
-        } else {
-            setUser({ name: 'Viewer', role: 'Viewer' });
-            setCurrentScreen('home');
-        }
+        setUser({ name: 'Viewer', role: 'Viewer' });
+        setCurrentScreen('home');
         setLoading(false);
     };
 
@@ -82,11 +70,6 @@ const LoginScreen = ({ setUser, setCurrentScreen }) => {
                 </div>
                 <h1 className="text-3xl font-black text-white tracking-tight">SiPola</h1>
                 <p className="text-slate-400 text-sm mt-1">Sistem Pengamanan Lapas</p>
-                {!isSupabaseConfigured() && (
-                    <p className="text-amber-400 text-xs mt-2 bg-amber-400/10 px-3 py-1 rounded-full inline-block">
-                        Demo Mode
-                    </p>
-                )}
             </div>
 
             {/* Login Form */}
@@ -97,32 +80,22 @@ const LoginScreen = ({ setUser, setCurrentScreen }) => {
                     </div>
                 )}
 
-                {/* Username Input / Dropdown */}
-                {!isSupabaseConfigured() ? (
-                    <div className="relative">
-                        <select
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none cursor-pointer"
-                        >
-                            <option value="" className="bg-slate-800">Pilih Petugas...</option>
-                            {ACCOUNTS.map(acc => (
-                                <option key={acc.username} value={acc.username} className="bg-slate-800">
-                                    {acc.name}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
-                    </div>
-                ) : (
-                    <input
-                        type="text"
-                        placeholder="Username"
+                {/* Username Dropdown - Always show */}
+                <div className="relative">
+                    <select
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-5 py-4 text-white font-medium placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                )}
+                        className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none cursor-pointer"
+                    >
+                        <option value="" className="bg-slate-800">Pilih Petugas...</option>
+                        {ACCOUNTS.map(acc => (
+                            <option key={acc.username} value={acc.username} className="bg-slate-800">
+                                {acc.name}
+                            </option>
+                        ))}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+                </div>
 
                 {/* Password Input */}
                 <div className="relative">

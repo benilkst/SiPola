@@ -129,7 +129,25 @@ const ScanScreen = ({ user, setCurrentScreen, qrDatabase, setScanHistory, scanHi
             </div>
 
             {/* Camera View */}
-            <div id="reader" className="relative flex-1 bg-slate-900 overflow-hidden"></div>
+            <div className="flex-1 flex items-center justify-center bg-slate-900">
+                <div id="reader" className="relative w-full bg-slate-900 overflow-hidden" style={{ maxWidth: '100vw', aspectRatio: '1/1' }}></div>
+            </div>
+
+            <style>{`
+                #reader video {
+                    object-fit: cover !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                }
+                #reader {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                }
+                #reader > div {
+                    width: 100% !important;
+                }
+            `}</style>
 
             {/* Scan Overlay */}
             {!tempScan && !result && scanning && (
@@ -206,14 +224,21 @@ const ScanScreen = ({ user, setCurrentScreen, qrDatabase, setScanHistory, scanHi
                         {scanHistory.length === 0 ? (
                             <p className="text-center text-slate-400 py-10">Belum ada scan.</p>
                         ) : scanHistory.map(s => (
-                            <div key={s.id} className="bg-white/5 p-4 rounded-xl flex justify-between items-center">
-                                <div>
-                                    <p className="font-bold">{s.location}</p>
-                                    <p className="text-xs text-slate-400">{s.time}</p>
+                            <div key={s.id} className="bg-white/5 p-4 rounded-xl">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <p className="font-bold">{s.location || s.loc}</p>
+                                        <p className="text-xs text-slate-400">{s.time}</p>
+                                    </div>
+                                    <span className={`px-3 py-1 rounded-lg text-xs font-bold ${s.status === 'Aman' ? 'bg-green-500' : s.status === 'Rawan' ? 'bg-yellow-500' : s.status === 'Waspada' ? 'bg-orange-500' : 'bg-red-500'}`}>
+                                        {s.status}
+                                    </span>
                                 </div>
-                                <span className={`px-3 py-1 rounded-lg text-xs font-bold ${s.status === 'Aman' ? 'bg-green-500' : s.status === 'Rawan' ? 'bg-yellow-500' : s.status === 'Waspada' ? 'bg-orange-500' : 'bg-red-500'}`}>
-                                    {s.status}
-                                </span>
+                                {(s.notes || s.desc) && (
+                                    <p className="mt-2 text-sm text-slate-300 bg-white/5 p-2 rounded-lg">
+                                        {s.notes || s.desc}
+                                    </p>
+                                )}
                             </div>
                         ))}
                     </div>

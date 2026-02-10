@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { User, QrCode, Users, ClipboardList, PlusCircle, CalendarDays, Sunrise, Sun, Moon } from 'lucide-react';
+import { User, QrCode, Users, ClipboardList, PlusCircle, CalendarDays, Sunrise, Sun, Moon, X, Eye } from 'lucide-react';
 import { MenuCard } from '../components/UI';
 
 const HomeScreen = ({ user, setCurrentScreen, apelHistory, activityLog }) => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [viewImage, setViewImage] = useState(null);
 
     const getApelData = (shift) => {
         const found = apelHistory.find(item => item.dateISO === selectedDate && item.shift === shift);
@@ -19,6 +20,13 @@ const HomeScreen = ({ user, setCurrentScreen, apelHistory, activityLog }) => {
     if (!user) return null;
     return (
         <div className="min-h-screen bg-slate-100 font-sans pb-10">
+            {/* Image Viewer Overlay */}
+            {viewImage && (
+                <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setViewImage(null)}>
+                    <button className="absolute top-6 right-6 text-white/70 hover:text-white bg-black/50 rounded-full p-2 transition-all z-50"><X size={28} /></button>
+                    <img src={viewImage} alt="Full View" className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain" onClick={(e) => e.stopPropagation()} />
+                </div>
+            )}
             <div className="h-64 bg-slate-900 rounded-b-[3.5rem] relative overflow-hidden shadow-2xl">
                 <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[60px] opacity-30"></div>
                 <div className="absolute top-10 -right-20 w-72 h-72 bg-purple-600 rounded-full mix-blend-screen filter blur-[60px] opacity-30"></div>
@@ -94,16 +102,18 @@ const HomeScreen = ({ user, setCurrentScreen, apelHistory, activityLog }) => {
                                         </div>
                                         <div className="flex-1 bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-blue-200 hover:shadow-sm transition-all mb-2">
                                             <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800">{act.name}</p>
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{act.user}</span>
-                                                </div>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{act.user}</span>
                                             </div>
                                             <p className="text-sm text-slate-600 leading-relaxed">{act.desc}</p>
                                             {(act.images?.length > 0 || act.image) && (
                                                 <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                                                     {(act.images || [act.image]).map((img, i) => (
-                                                        <img key={i} src={img} alt="Bukti" className="w-16 h-16 object-cover rounded-lg border border-slate-200 shadow-sm" />
+                                                        <button key={i} onClick={() => setViewImage(img)} className="rounded-lg overflow-hidden border border-slate-200 shadow-sm w-16 h-16 flex-shrink-0 relative group">
+                                                            <img src={img} alt="Bukti" className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                                <Eye className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" size={14} />
+                                                            </div>
+                                                        </button>
                                                     ))}
                                                 </div>
                                             )}

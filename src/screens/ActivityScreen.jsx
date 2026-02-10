@@ -1,11 +1,11 @@
 import { useState, useRef } from 'react';
-import { Save, Camera, History, X, Trash2, Eye } from 'lucide-react';
+import { Save, Camera, History, X, Trash2, Eye, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Header, GlassCard } from '../components/UI';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog }) => {
     const [desc, setDesc] = useState('');
-    const [name, setName] = useState('');
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [time, setTime] = useState(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
     const [imagePreviews, setImagePreviews] = useState([]);
     const [saving, setSaving] = useState(false);
@@ -79,7 +79,6 @@ const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog })
     const save = async (e) => {
         e.preventDefault();
         if (!desc) return alert("Isi uraian kegiatan!");
-        if (!name) return alert("Isi nama yang bersangkutan!");
 
         setSaving(true);
         const todayISO = new Date().toISOString().split('T')[0];
@@ -97,36 +96,38 @@ const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog })
         const newActivity = {
             id: Date.now(),
             time,
-            name,
             desc,
             user: user.name,
             images: imageUrls,
             dateISO: todayISO
         };
 
-        if (isSupabaseConfigured()) {
-            const { error } = await supabase.from('activities').insert({
-                user_id: user.id,
-                user_name: user.name,
-                time,
-                subject_name: name,
-                description: desc,
-                images: imageUrls,
-                date: todayISO
-            });
-
-            if (error) {
-                alert('Gagal menyimpan: ' + error.message);
-                setSaving(false);
-                return;
-            }
-        }
-
+        // Always save locally first
         setActivityLog(p => [newActivity, ...p]);
         setDesc('');
-        setName('');
         setImagePreviews([]);
         setSaving(false);
+
+        // Then try to save to Supabase in the background
+        if (isSupabaseConfigured()) {
+            try {
+                const { error } = await supabase.from('activities').insert({
+                    user_id: user.id,
+                    user_name: user.name,
+                    time,
+                    subject_name: '-',
+                    description: desc,
+                    images: imageUrls,
+                    date: todayISO
+                });
+
+                if (error) {
+                    console.error('Supabase save error:', error.message);
+                }
+            } catch (err) {
+                console.error('Supabase save error:', err);
+            }
+        }
     };
 
     return (
@@ -143,9 +144,9 @@ const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog })
             <div className="p-6 flex-1 overflow-y-auto">
                 <GlassCard className="p-5 mb-8">
                     <form onSubmit={save}>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Waktu</label><input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 font-bold text-slate-700 focus:ring-2 focus:ring-orange-400" /></div>
-                            <div><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nama Subjek</label><input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 font-bold text-slate-700 focus:ring-2 focus:ring-orange-400" placeholder="Petugas/Tamu/WBP" /></div>
+                        <div className="mb-4">
+                            <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Waktu</label>
+                            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 font-bold text-slate-700 focus:ring-2 focus:ring-orange-400" />
                         </div>
                         <div className="mb-4"><label className="block text-xs font-bold text-slate-400 uppercase mb-2">Uraian Kegiatan</label><textarea rows="3" value={desc} onChange={e => setDesc(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-700 focus:ring-2 focus:ring-orange-400" placeholder="Jelaskan aktivitas..."></textarea></div>
                         <div className="mb-4">
@@ -159,23 +160,79 @@ const ActivityScreen = ({ user, setCurrentScreen, setActivityLog, activityLog })
                         </button>
                     </form>
                 </GlassCard>
-                <h3 className="font-bold text-slate-800 mb-4 flex items-center text-sm uppercase tracking-wider"><History size={18} className="mr-2 text-slate-400" /> Riwayat Hari Ini</h3>
+                {/* Date selector */}
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-slate-800 flex items-center text-sm uppercase tracking-wider">
+                        <History size={18} className="mr-2 text-slate-400" /> Riwayat Kegiatan
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const d = new Date(selectedDate);
+                                d.setDate(d.getDate() - 1);
+                                setSelectedDate(d.toISOString().split('T')[0]);
+                            }}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-orange-100 text-slate-500 hover:text-orange-500 transition-all"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                        <div className="relative">
+                            <input
+                                type="date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const d = new Date(selectedDate);
+                                d.setDate(d.getDate() + 1);
+                                const tomorrow = d.toISOString().split('T')[0];
+                                const today = new Date().toISOString().split('T')[0];
+                                if (tomorrow <= today) setSelectedDate(tomorrow);
+                            }}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-orange-100 text-slate-500 hover:text-orange-500 transition-all"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Day and date display */}
+                <div className="flex items-center gap-2 mb-4 px-1">
+                    <CalendarDays size={16} className="text-orange-400" />
+                    <span className="text-sm font-bold text-slate-700">
+                        {new Date(selectedDate + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </span>
+                    {selectedDate === new Date().toISOString().split('T')[0] && (
+                        <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">Hari Ini</span>
+                    )}
+                </div>
+
                 <div className="space-y-4 pb-20">
-                    {activityLog.length === 0 ? <p className="text-center text-slate-400 text-sm italic py-4">Belum ada kegiatan tercatat.</p> : activityLog.map(l => (
-                        <div key={l.id} className="flex relative pl-6 pb-6 last:pb-0 border-l-2 border-slate-200 ml-3">
-                            <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-orange-500 border-4 border-white"></div>
-                            <div className="w-full">
-                                <div className="flex justify-between items-start mb-1">
-                                    <div><span className="text-xs font-bold text-slate-400 mr-2">{l.time}</span><span className="text-sm font-bold text-slate-800">{l.name}</span></div>
-                                    <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-500 border border-slate-200">Oleh: {l.user}</span>
-                                </div>
-                                <div className="bg-white p-4 rounded-2xl border border-slate-100">
-                                    <p className="text-sm text-slate-700 leading-relaxed font-medium">{l.desc}</p>
-                                    {l.images && l.images.length > 0 && (<div className="mt-3 grid grid-cols-2 gap-2">{l.images.map((img, i) => (<button key={i} onClick={() => setViewImage(img)} className="rounded-xl overflow-hidden border border-slate-100 h-24 relative group"><img src={img} alt="Bukti" className="w-full h-full object-cover transition-transform group-hover:scale-105" /><div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center"><Eye className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" size={20} /></div></button>))}</div>)}
+                    {(() => {
+                        const filtered = activityLog.filter(l => l.dateISO === selectedDate);
+                        return filtered.length === 0 ? (
+                            <p className="text-center text-slate-400 text-sm italic py-4">Belum ada kegiatan tercatat pada tanggal ini.</p>
+                        ) : filtered.map(l => (
+                            <div key={l.id} className="flex relative pl-6 pb-6 last:pb-0 border-l-2 border-slate-200 ml-3">
+                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-orange-500 border-4 border-white"></div>
+                                <div className="w-full">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="text-xs font-bold text-slate-400">{l.time}</span>
+                                        <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-500 border border-slate-200">Oleh: {l.user}</span>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-2xl border border-slate-100">
+                                        <p className="text-sm text-slate-700 leading-relaxed font-medium">{l.desc}</p>
+                                        {l.images && l.images.length > 0 && (<div className="mt-3 grid grid-cols-2 gap-2">{l.images.map((img, i) => (<button key={i} onClick={() => setViewImage(img)} className="rounded-xl overflow-hidden border border-slate-100 h-24 relative group"><img src={img} alt="Bukti" className="w-full h-full object-cover transition-transform group-hover:scale-105" /><div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center"><Eye className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" size={20} /></div></button>))}</div>)}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        ));
+                    })()}
                 </div>
             </div>
         </div>
